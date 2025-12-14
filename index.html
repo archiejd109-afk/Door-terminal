@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+content="width=device-width,height=device-height,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+
+<title>SECURITY TERMINAL</title>
+
+<style>
+body{
+    margin:0;
+    background:black;
+    color:#00ff66;
+    font-family:"Courier New",monospace;
+    width:100vw;
+    height:100vh;
+    overflow:hidden;
+}
+
+/* CRT SCANLINES */
+body::before{
+    content:"";
+    position:fixed;
+    inset:0;
+    background:repeating-linear-gradient(
+        to bottom,
+        rgba(0,0,0,.18) 0px,
+        rgba(0,0,0,.18) 1px,
+        rgba(0,0,0,0) 2px
+    );
+    pointer-events:none;
+    z-index:50;
+}
+
+.wrapper{
+    width:100%;
+    height:100%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+
+.screen{
+    width:480px;
+    height:320px;
+    border:3px solid #00ff66;
+    box-shadow:0 0 20px rgba(0,255,100,.5);
+    box-sizing:border-box;
+    position:relative;
+    display:flex;
+    flex-direction:column;
+}
+
+/* TOP BAR */
+.topbar{
+    height:26px;
+    padding:4px 10px;
+    font-size:10px;
+    display:flex;
+    justify-content:flex-end;
+    opacity:.8;
+    border-bottom:1px solid rgba(0,255,100,.4);
+}
+
+/* MAIN CONTENT */
+.content{
+    flex:1;
+    padding:10px;
+    box-sizing:border-box;
+}
+
+.hidden{display:none!important;}
+
+/* MAIN LAYOUT */
+.main{
+    display:flex;
+    height:100%;
+}
+
+/* LEFT */
+.left{
+    flex:1;
+    padding-right:10px;
+}
+
+h1{
+    font-size:16px;
+    margin:6px 0 4px;
+    text-shadow:0 0 6px rgba(0,255,100,.6);
+}
+
+#attempts{
+    font-size:11px;
+    margin-bottom:10px;
+    opacity:.8;
+}
+
+.pin-display{
+    font-size:26px;
+    letter-spacing:10px;
+    height:34px;
+    margin-top:20px;
+}
+
+/* RIGHT */
+.right{
+    width:180px;
+}
+
+.keypad{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:8px;
+}
+
+button{
+    background:black;
+    border:1px solid #00ff66;
+    color:#00ff66;
+    font-size:16px;
+    padding:12px;
+    font-family:inherit;
+}
+
+/* ACCESS */
+.red-flash{animation:redPulse 1.4s infinite;}
+@keyframes redPulse{
+    0%{background:black;}
+    50%{background:#220000;}
+    100%{background:black;}
+}
+
+.green-flicker{animation:flicker .15s infinite;}
+@keyframes flicker{
+    0%{opacity:1;}
+    50%{opacity:.85;}
+    100%{opacity:1;}
+}
+
+#accessScreen{
+    position:absolute;
+    inset:26px 0 0 0;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+}
+
+.countdown{
+    font-size:48px;
+    text-shadow:0 0 8px rgba(0,255,100,.7);
+}
+
+/* WHITE FLASH */
+#whiteFlash{
+    position:absolute;
+    inset:0;
+    background:white;
+    opacity:0;
+    z-index:20;
+    pointer-events:none;
+    transition:opacity 1.6s ease-out;
+}
+
+/* LOCKOUT */
+#lockout{
+    position:absolute;
+    inset:26px 0 0 0;
+    background:black;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    align-items:center;
+    font-size:56px;
+    z-index:30;
+}
+</style>
+</head>
+
+<body>
+<div class="wrapper">
+<div class="screen" id="screen">
+
+<!-- TOP BAR -->
+<div class="topbar">
+    <div id="datetime"></div>
+</div>
+
+<!-- CONTENT -->
+<div class="content">
+
+<!-- PIN SCREEN -->
+<div id="pinScreen" class="main">
+    <div class="left">
+        <h1>ENTER PIN TO ACCESS<br>ARCHIES ROOM</h1>
+        <div id="attempts">3 ATTEMPTS REMAINING</div>
+        <div class="pin-display" id="pinDisplay"></div>
+    </div>
+
+    <div class="right">
+        <div class="keypad">
+            <button onclick="press(1)">1</button>
+            <button onclick="press(2)">2</button>
+            <button onclick="press(3)">3</button>
+            <button onclick="press(4)">4</button>
+            <button onclick="press(5)">5</button>
+            <button onclick="press(6)">6</button>
+            <button onclick="press(7)">7</button>
+            <button onclick="press(8)">8</button>
+            <button onclick="press(9)">9</button>
+            <button onclick="clearPin()">CLR</button>
+            <button onclick="press(0)">0</button>
+            <button onclick="clearPin()">←</button>
+        </div>
+    </div>
+</div>
+
+</div>
+
+<!-- ACCESS -->
+<div id="accessScreen" class="hidden">
+    <div class="countdown" id="accessCountdown"></div>
+    <div>UNTIL DOOR RE-ARMS</div>
+</div>
+
+<div id="whiteFlash"></div>
+
+<div id="lockout" class="hidden">
+    🔒
+    <div id="lockCountdown" style="font-size:24px;margin-top:10px;"></div>
+</div>
+
+</div>
+</div>
+
+<script>
+/* DATE / TIME */
+const dt=document.getElementById("datetime");
+setInterval(()=>{
+    const d=new Date();
+    dt.textContent =
+        d.toLocaleDateString()+" "+d.toLocaleTimeString();
+},1000);
+
+/* AUDIO */
+const ctx=new (window.AudioContext||window.webkitAudioContext)();
+function tone(f,d){
+    if(ctx.state==="suspended")ctx.resume();
+    const o=ctx.createOscillator();
+    const g=ctx.createGain();
+    o.frequency.value=f;
+    g.gain.value=.15;
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); setTimeout(()=>o.stop(),d);
+}
+const beep=(f=900,d=70)=>tone(f,d);
+
+/* LOGIC */
+let pin="",tries=3;
+const correct="4567";
+
+const pinScreen=document.getElementById("pinScreen");
+const accessScreen=document.getElementById("accessScreen");
+const pinDisplay=document.getElementById("pinDisplay");
+const attemptsText=document.getElementById("attempts");
+const screen=document.getElementById("screen");
+const whiteFlash=document.getElementById("whiteFlash");
+const lockout=document.getElementById("lockout");
+
+function updateAttempts(){
+    attemptsText.textContent=`${tries} ATTEMPTS REMAINING`;
+}
+
+function press(n){
+    if(pin.length>=4)return;
+    pin+=n; beep();
+    pinDisplay.textContent="*".repeat(pin.length);
+    if(pin.length===4)checkPin();
+}
+
+function clearPin(){
+    pin=""; pinDisplay.textContent="";
+}
+
+function checkPin(){
+    if(pin===correct){
+        pin=""; tries=3; updateAttempts();
+        startAccess();
+    }else{
+        pin=""; tries--; updateAttempts();
+        beep(300,200);
+        if(tries<=0)lockOut();
+    }
+}
+
+/* ACCESS */
+function startAccess(){
+    pinScreen.classList.add("hidden");
+    accessScreen.classList.remove("hidden");
+    screen.classList.add("red-flash");
+
+    let t=40;
+    const cd=document.getElementById("accessCountdown");
+    cd.textContent=t+"s";
+
+    const interval=setInterval(()=>{
+        t--;
+        cd.textContent=t+"s";
+        beep(t<=5?1200:800,60);
+
+        if(t<=0){
+            clearInterval(interval);
+            screen.classList.remove("red-flash");
+            screen.classList.add("green-flicker");
+            setTimeout(()=>{
+                screen.classList.remove("green-flicker");
+                accessScreen.classList.add("hidden");
+                pinScreen.classList.remove("hidden");
+            },800);
+        }
+    },1000);
+}
+
+/* LOCKOUT */
+function lockOut(){
+    pinScreen.classList.add("hidden");
+    whiteFlash.style.opacity="1";
+
+    setTimeout(()=>{
+        whiteFlash.style.opacity="0";
+        setTimeout(()=>{
+            lockout.classList.remove("hidden");
+            startLockCountdown();
+        },1600);
+    },2000);
+}
+
+function startLockCountdown(){
+    let t=600;
+    const lc=document.getElementById("lockCountdown");
+    const interval=setInterval(()=>{
+        const m=Math.floor(t/60);
+        const s=(t%60).toString().padStart(2,"0");
+        lc.textContent=`${m}:${s}`;
+        t--;
+        if(t<0){
+            clearInterval(interval);
+            lockout.classList.add("hidden");
+            tries=3; updateAttempts();
+            pinScreen.classList.remove("hidden");
+        }
+    },1000);
+}
+</script>
+</body>
+</html>
